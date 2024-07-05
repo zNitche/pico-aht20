@@ -8,35 +8,45 @@ class AHT20:
         self.address = address
         self.i2c = i2c
 
-        self.reset()
-        self.__calibrate()
+        self.__reset()
+
+        if self.is_initialized():
+            self.__initialize()
 
     def is_device_accessible(self):
         return True if self.address in self.i2c.scan() else False
 
-    def reset(self):
+    def is_initialized(self):
+        buff = self.i2c.readfrom(self.address, 1)
+        return buff[0] != 0x18
+
+    def __reset(self):
         self.i2c.writeto(self.address, bytearray([0xBA]))
-        time.sleep_ms(50)
+        time.sleep_ms(100)
 
-    def __calibrate(self):
+    def __initialize(self):
         self.i2c.writeto(self.address, bytearray([0xBE, 0x08, 0]))
-        time.sleep_ms(50)
+        time.sleep_ms(100)
 
-    def __parse_humidity(self, raw_values: bytearray) -> float:
-        humidity = ((raw_values[1] << 12) | (raw_values[2] << 4) | (raw_values[3] >> 4))
-        humidity = (humidity * 100) / 0x100000
+    def __parse_humidity(self, raw_data: bytearray) -> float:
+        # merge bytes
+        # register is 20 bits long, fill to 20, to 12, take first 4 bits
+        humidity = ((raw_data[1] << 12) | (raw_data[2] << 4) | (raw_data[3] >> 4))
+        humidity = humidity / 1048576 * 100
 
         return humidity
 
-    def __parse_temperature(self, raw_values: bytearray) -> float:
-        temp = ((raw_values[3] & 0xF) << 16) | (raw_values[4] << 8) | raw_values[5]
-        temp = ((temp * 200.0) / 0x100000) - 50
+    def __parse_temperature(self, raw_data: bytearray) -> float:
+        # merge bytes
+        # register is 20 bits long, take last 4 bits then fill to 20, fill to 16, take last register
+        temp = ((raw_data[3] & 0xF) << 16) | (raw_data[4] << 8) | raw_data[5]
+        temp = ((temp / 1048576) * 200.0) - 50
 
         return temp
 
     def __read_raw_data(self) -> bytearray:
         self.i2c.writeto(self.address, bytearray([0xAC, 0x33, 0]))
-        time.sleep_ms(50)
+        time.sleep_ms(100)
 
         return self.i2c.readfrom(self.address, 6)
 
